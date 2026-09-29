@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AERIS - Offline Dispatch Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #FAF0F2; color: #1E293B; font-family: 'Plus Jakarta Sans', sans-serif; }
+    .card-aeris { background: #FFFFFF; border-radius: 16px; border: 1px solid #F3D5DB; box-shadow: 0 4px 12px rgba(112, 20, 3, 0.05); }
+    .btn-maroon { background-color: #701403; color: white; font-weight: 600; border-radius: 8px; }
+    .btn-maroon:hover { background-color: #520e02; color: white; }
+    .badge-pending { background-color: #FEF3C7; color: #D97706; }
+    .badge-booked { background-color: #DBEAFE; color: #2563EB; }
+    .badge-completed { background-color: #D1FAE5; color: #059669; }
+  </style>
+</head>
+<body class="py-4">
+  <div class="container">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h3 class="fw-bold mb-0" style="color: #701403;">AERIS BEAUTE</h3>
+        <p class="text-muted mb-0">Offline Order Instant Dispatch Portal</p>
+      </div>
+      <button class="btn btn-outline-secondary btn-sm" onclick="loadData()">🔄 Refresh Data</button>
+    </div>
+
+    <!-- Form Input Request Gudang -->
+    <div class="card card-aeris p-4 mb-4">
+      <h5 class="fw-bold mb-3" style="color: #701403;">📦 Input Request Ekspedisi Instant (WH Admin)</h5>
+      <form id="dispatchForm" onsubmit="submitRequest(event)">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label text-sm fw-semibold">No. Surat Jalan / PO</label>
+            <input type="text" id="noSuratJalan" class="form-control" placeholder="Contoh: SJ-B2B-1029" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-sm fw-semibold">Channel Offline</label>
+            <select id="channel" class="form-select" required>
+              <option value="B2B">B2B Bulk</option>
+              <option value="Consignment">Consignment</option>
+              <option value="Marketing">Marketing / PR</option>
+              <option value="Reseller">Reseller</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-sm fw-semibold">Jumlah Koli/Box</label>
+            <input type="number" id="jumlahKoli" class="form-control" placeholder="1" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-sm fw-semibold">PIC Admin WH</label>
+            <input type="text" id="picAdmin" class="form-control" placeholder="Nama Admin" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-maroon mt-3 w-100">🚀 Submit Request Ekspedisi</button>
+      </form>
+    </div>
+
+    <!-- Tabel Monitoring & Action -->
+    <div class="card card-aeris p-4">
+      <h5 class="fw-bold mb-3" style="color: #701403;">📋 Monitoring Status Request Offline</h5>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Jam Request</th>
+              <th>No. Surat Jalan</th>
+              <th>Channel</th>
+              <th>Koli</th>
+              <th>PIC WH</th>
+              <th>Status</th>
+              <th>Info Driver / Booking</th>
+              <th>Aksi CS & Outbound</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="8" class="text-center py-4">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // GANTI SAMA URL APPS SCRIPT KAMU
+    const API_URL = "YOUR_APPS_SCRIPT_URL_HERE";
+
+    async function loadData() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        let html = "";
+        
+        data.reverse().forEach(row => {
+          let badgeClass = "badge-pending";
+          if(row.status === "DRIVER BOOKED") badgeClass = "badge-booked";
+          if(row.status === "COMPLETED") badgeClass = "badge-completed";
+          
+          let dateFormatted = new Date(row.timestamp).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
+
+          html += `
+            <tr>
+              <td><small class="text-muted">${dateFormatted}</small></td>
+              <td class="fw-bold">${row.noSuratJalan}</td>
+              <td><span class="badge bg-secondary">${row.channel}</span></td>
+              <td>${row.jumlahKoli} Box</td>
+              <td>${row.picAdmin}</td>
+              <td><span class="badge ${badgeClass}">${row.status}</span></td>
+              <td><small>${row.kodeBooking}</small></td>
+              <td>
+                ${row.status === 'PENDING BOOKING' ? 
+                  `<button class="btn btn-sm btn-primary" onclick="updateBooking(${row.rowIndex})">CS: Input Driver</button>` : ''}
+                ${row.status === 'DRIVER BOOKED' ? 
+                  `<button class="btn btn-sm btn-success" onclick="completeHandover(${row.rowIndex})">WH: Complete</button>` : ''}
+                ${row.status === 'COMPLETED' ? `<small class="text-success">✓ Selesai</small>` : ''}
+              </td>
+            </tr>
+          `;
+        });
+        document.getElementById("tableBody").innerHTML = html || "<tr><td colspan='8' class='text-center'>Belum ada request.</td></tr>";
+      } catch(err) {
+        console.error(err);
+      }
+    }
+
+    async function submitRequest(e) {
+      e.preventDefault();
+      const payload = {
+        action: "CREATE_REQUEST",
+        noSuratJalan: document.getElementById("noSuratJalan").value,
+        channel: document.getElementById("channel").value,
+        jumlahKoli: document.getElementById("jumlahKoli").value,
+        picAdmin: document.getElementById("picAdmin").value
+      };
+      await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
+      document.getElementById("dispatchForm").reset();
+      loadData();
+    }
+
+    async function updateBooking(rowIndex) {
+      const driverInfo = prompt("CS: Masukkan Nama Driver & Plat Nomor / Kode Booking:");
+      if (!driverInfo) return;
+      const payload = { action: "UPDATE_BOOKING", rowIndex: rowIndex, kodeBooking: driverInfo };
+      await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
+      loadData();
+    }
+
+    async function completeHandover(rowIndex) {
+      if(confirm("Konfirmasi barang sudah dibawa driver?")) {
+        const payload = { action: "COMPLETE_HANDOVER", rowIndex: rowIndex };
+        await fetch(API_URL, { method: "POST", body: JSON.stringify(payload) });
+        loadData();
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
